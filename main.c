@@ -194,18 +194,18 @@ int main() {
             GL_STATIC_DRAW);
 
     // pbo ---------------------------------------------------------------------
-    float pixels[] = {
-            1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
-            1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f
-    };
-
+    float pixels[] = { [0 ... (4 * (100 * 1)) - 1] = 0.0f };
+    pixels[0] = 1.0f;
     glGenBuffers(1, &pbo);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
 
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, sizeof(pixels), NULL, GL_STREAM_DRAW);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, sizeof(pixels), 0, GL_STREAM_DRAW);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 100, 1, 0,
+            GL_RGBA, GL_FLOAT, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     void *mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE);
     if (mapped_buffer == NULL) {
@@ -214,11 +214,6 @@ int main() {
     }
     memcpy(mapped_buffer, pixels, sizeof(pixels));
     glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA,
-            GL_FLOAT, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     // -------------------------------------------------------------------------
 
@@ -231,22 +226,6 @@ int main() {
     glVertexAttribPointer(1, uv_size, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
             (void *) (2 * sizeof(float)));
     glEnableVertexAttribArray(1);
-
-    // load texture
-//    glGenTextures(1, &tex);
-//    glBindTexture(GL_TEXTURE_2D, tex);
-//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-//    int tex_width, tex_height, tex_channels;
-//    unsigned char *data = stbi_load("assets/img/arrow.png", &tex_width,
-//            &tex_height, &tex_channels, 0);
-//    if (!data) {
-//        fprintf(stderr, "Failed to load texture.\n");
-//        exit(-1);
-//    }
-//    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0, GL_RGBA,
-//            GL_UNSIGNED_BYTE, data);
-//    stbi_image_free(data);
 
     GLuint default_program;
     default_program = shader_program_create("assets/shaders/default.v.shader",
@@ -280,6 +259,7 @@ int main() {
         }
         glBindVertexArray(vao);
         glBindTexture(GL_TEXTURE_2D, tex);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
         // update
         for (int i = 0; i < timer.fps; i++) {
             float *line = queue_pop(&mag_line_queue);
@@ -302,6 +282,12 @@ int main() {
                 free(line);
             }
         }
+        float pixels2[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        memcpy(mapped_buffer, pixels2, sizeof(pixels2));
+        glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
         glUseProgram(0);
