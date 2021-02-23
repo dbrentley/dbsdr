@@ -53,4 +53,14 @@ void cursor_position_callback(GLFWwindow *window, double x_pos, double y_pos) {
 void scroll_callback(GLFWwindow *window, double x_offset, double y_offset) {
     game_state->mouse_state->scroll_x_offset = x_offset;
     game_state->mouse_state->scroll_y_offset = y_offset;
+    if (y_offset == -1.0f) {
+        if (game_state->window_state->zoom < 30.0f) {
+            game_state->window_state->zoom += 0.5f;
+        }
+    } else {
+        if (game_state->window_state->zoom > 1.0f) {
+            game_state->window_state->zoom -= 0.5f;
+        }
+    }
+    game_state->window_state->update_aspect = 1;
 }

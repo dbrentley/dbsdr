@@ -14,6 +14,7 @@ typedef struct mouse_state {
 typedef struct window_state {
     float aspect;
     float scale;
+    float zoom;
     int width;
     int height;
     int update_aspect;
@@ -21,7 +22,7 @@ typedef struct window_state {
     mat4x4 mvp;
 } window_state_t;
 
-typedef struct timer_t {
+typedef struct game_timer {
     double time;
     double previous_time;
     double start_time;
@@ -29,7 +30,7 @@ typedef struct timer_t {
     double delta;
     int frame_count;
     int fps;
-} Timer;
+} game_timer_t;
 
 typedef struct game_state {
     int should_close;
