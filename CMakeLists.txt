@@ -13,7 +13,7 @@ pkg_search_module(GLFW REQUIRED glfw3)
 
 
 add_executable(dbsdr main.c global.h mouse.c mouse.h device.c device.h shader.c
-        shader.h queue.c queue.h fft.c fft.h waterfall.c waterfall.h linmath.h)
+        shader.h queue.c queue.h fft.c fft.h waterfall.c waterfall.h linmath.h window.c window.h)
 target_link_libraries(dbsdr GLEW::GLEW ${GLFW_STATIC_LIBRARIES}
         ${OPENGL_LIBRARIES} hackrf pthread fftw3 stb m)
 

@@ -52,7 +52,7 @@ void set_aspect(int width, int height) {
 
     mat4x4 m, p;
     mat4x4_identity(m);
-    mat4x4_ortho(p, -aspect * zoom, aspect * zoom, zoom, -zoom, 1.0f, -1.0f);
+    mat4x4_ortho(p, -aspect * zoom, aspect * zoom, -zoom, zoom, 1.0f, -1.0f);
     mat4x4_mul(game_state->window_state->mvp, p, m);
 
     game_state->window_state->width = width;
@@ -103,7 +103,7 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+    //glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
     //glfwWindowHint(GLFW_SAMPLES, 4); // anti-alias
 
     window = glfwCreateWindow(DEFAULT_WIDTH, DEFAULT_HEIGHT, "TradesKill", NULL,
@@ -175,7 +175,7 @@ int main() {
     int position_size = 2;
     int uv_size = 2;
 
-    GLuint vbo, vao, tex, ebo, fbo;
+    GLuint vbo, vao, tex, ebo, pbo;
 
     // voa
     glGenVertexArrays(1, &vao);
@@ -193,6 +193,35 @@ int main() {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements,
             GL_STATIC_DRAW);
 
+    // pbo ---------------------------------------------------------------------
+    float pixels[] = {
+            1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+            1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f
+    };
+
+    glGenBuffers(1, &pbo);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, sizeof(pixels), NULL, GL_STREAM_DRAW);
+
+    void *mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE);
+    if (mapped_buffer == NULL) {
+        fprintf(stderr, "Could not create mapped buffer\n");
+        exit(-1);
+    }
+    memcpy(mapped_buffer, pixels, sizeof(pixels));
+    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA,
+            GL_FLOAT, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    // -------------------------------------------------------------------------
+
     // position
     glVertexAttribPointer(0, position_size, GL_FLOAT, GL_FALSE,
             4 * sizeof(float), (void *) 0);
@@ -204,51 +233,20 @@ int main() {
     glEnableVertexAttribArray(1);
 
     // load texture
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    int tex_width, tex_height, tex_channels;
-    unsigned char *data = stbi_load("assets/img/arrow.png", &tex_width,
-            &tex_height, &tex_channels, 0);
-    if (!data) {
-        fprintf(stderr, "Failed to load texture.\n");
-        exit(-1);
-    }
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0, GL_RGBA,
-            GL_UNSIGNED_BYTE, data);
-    stbi_image_free(data);
-
-    // -------------------------------------------------------------------------
-    // fbo - https://learnopengl.com/Advanced-OpenGL/Framebuffers
-    glGenFramebuffers(1, &fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    // create color attachment texture
-    GLuint c_tex;
-    glGenTextures(1, &c_tex);
-    glBindTexture(GL_TEXTURE_2D, c_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, game_state->window_state->width,
-            game_state->window_state->height, 0, GL_RGB,
-            GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    // attach to currently bound fbo
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-            c_tex, 0);
-    // rbo
-    GLuint rbo;
-    glGenRenderbuffers(1, &rbo);
-    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
-            game_state->window_state->width, game_state->window_state->height);
-    // attach the rbo to fbo
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-            GL_RENDERBUFFER, rbo);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        fprintf(stderr, "Framebuffer is not complete\n");
-        exit(-1);
-    }
-    // -------------------------------------------------------------------------
+//    glGenTextures(1, &tex);
+//    glBindTexture(GL_TEXTURE_2D, tex);
+//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+//    int tex_width, tex_height, tex_channels;
+//    unsigned char *data = stbi_load("assets/img/arrow.png", &tex_width,
+//            &tex_height, &tex_channels, 0);
+//    if (!data) {
+//        fprintf(stderr, "Failed to load texture.\n");
+//        exit(-1);
+//    }
+//    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0, GL_RGBA,
+//            GL_UNSIGNED_BYTE, data);
+//    stbi_image_free(data);
 
     GLuint default_program;
     default_program = shader_program_create("assets/shaders/default.v.shader",
@@ -259,13 +257,6 @@ int main() {
     GLint mvp_uniform = shader_program_get_uniform_location(default_program,
             "mvp");
 
-    GLuint screen_program;
-    screen_program = shader_program_create("assets/shaders/screen.v.shader",
-            "assets/shaders/screen.f.shader");
-    shader_program_bind_attribute_location(screen_program, 0, "in_Position");
-    shader_program_bind_attribute_location(screen_program, 1, "in_Color");
-    shader_program_link(screen_program);
-
 
     set_aspect(game_state->window_state->width,
             game_state->window_state->height);
@@ -274,10 +265,6 @@ int main() {
             device_is_alive()) {
         timer.time = glfwGetTime();
         timer.start_time = timer.time;
-
-        // bind framebuffer
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glEnable(GL_DEPTH_TEST);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // process input
@@ -292,7 +279,6 @@ int main() {
                     game_state->window_state->height);
         }
         glBindVertexArray(vao);
-        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, tex);
         // update
         for (int i = 0; i < timer.fps; i++) {
@@ -320,23 +306,12 @@ int main() {
         glBindVertexArray(0);
         glUseProgram(0);
 
-
-        // switch to default framebuffer
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDisable(GL_DEPTH_TEST);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glUseProgram(screen_program);
-        glBindVertexArray(vao);
-        glBindTexture(GL_TEXTURE_2D, c_tex);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
-        glUseProgram(0);
-
         // poll for events
         glfwPollEvents();
 
         // swap buffers
         glfwSwapBuffers(window);
+
         timer.end_time = timer.time;
         timer.delta = timer.end_time - timer.start_time;
         timer.frame_count++;

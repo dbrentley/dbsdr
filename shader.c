@@ -54,6 +54,7 @@ GLuint shader_create(GLenum type, char *file) {
         free(info_log);
         exit(-1);
     }
+    free((void *) shader_source);
     return shader;
 }
 
