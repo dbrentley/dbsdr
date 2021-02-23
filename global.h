@@ -4,6 +4,10 @@
 #include "mouse.h"
 #include "linmath.h"
 
+typedef struct sdr_state {
+    int64_t frequency;
+} sdr_state_t;
+
 typedef struct mouse_state {
     double x_pos;
     double y_pos;
@@ -37,6 +41,7 @@ typedef struct game_state {
     GLFWcursor *cursor;
     window_state_t *window_state;
     mouse_state_t *mouse_state;
+    sdr_state_t *sdr_state;
 } game_state_t;
 
 

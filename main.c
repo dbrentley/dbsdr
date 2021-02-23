@@ -24,6 +24,8 @@
 #define DEFAULT_VGA_GAIN 24
 #define FFT_SIZE 8192 // max BYTES_PER_TRANSFER
 
+#define TW (8192)
+
 game_state_t *game_state;
 queue_t mag_line_queue;
 
@@ -92,9 +94,41 @@ int main() {
     queue_init(&mag_line_queue);
     fft_init(FFT_SIZE);
 
+    game_state = malloc(sizeof(game_state_t));
+    if (game_state == NULL) {
+        fprintf(stderr, "Could not create game state\n");
+        exit(-1);
+    }
+    game_state->window_state = malloc(sizeof(window_state_t));
+    if (game_state->window_state == NULL) {
+        fprintf(stderr, "Could not create game state - window state\n");
+        exit(-1);
+    }
+    game_state->mouse_state = malloc(sizeof(mouse_state_t));
+    if (game_state->mouse_state == NULL) {
+        fprintf(stderr, "Could not create game state - mouse position\n");
+        exit(-1);
+    }
+    game_state->sdr_state = malloc(sizeof(sdr_state_t));
+    if (game_state->sdr_state == NULL) {
+        fprintf(stderr, "Could not create game state - sdr state\n");
+        exit(-1);
+    }
+
+    //game_state->cursor = custom_cursor(window);
+    game_state->should_close = 0;
+    game_state->window_state->resizing = 0;
+    game_state->window_state->width = DEFAULT_WIDTH;
+    game_state->window_state->height = DEFAULT_HEIGHT;
+    game_state->window_state->aspect =
+            (float) DEFAULT_WIDTH / (float) DEFAULT_HEIGHT;
+    game_state->window_state->aspect = 1.0f;
+    game_state->window_state->zoom = 500.0f;
+    game_state->sdr_state->frequency = DEFAULT_FREQUENCY;
+
     device_init();
     device_set_sample_rate(DEFAULT_SAMPLE_RATE);
-    device_set_frequency(DEFAULT_FREQUENCY);
+    device_set_frequency(game_state->sdr_state->frequency);
     device_set_lna_gain(DEFAULT_LNA_GAIN);
     device_set_vga_gain(DEFAULT_VGA_GAIN);
     device_rx(receive_callback);
@@ -112,32 +146,6 @@ int main() {
         glfwTerminate();
         return -1;
     }
-
-    game_state = malloc(sizeof(game_state_t));
-    if (game_state == NULL) {
-        fprintf(stderr, "Could not create game state\n");
-        exit(-1);
-    }
-    game_state->window_state = malloc(sizeof(window_state_t));
-    if (game_state->window_state == NULL) {
-        fprintf(stderr, "Could not create game state - window state\n");
-        exit(-1);
-    }
-    game_state->mouse_state = malloc(sizeof(mouse_state_t));
-    if (game_state->mouse_state == NULL) {
-        fprintf(stderr, "Could not create game state - mouse position\n");
-        exit(-1);
-    }
-
-    //game_state->cursor = custom_cursor(window);
-    game_state->should_close = 0;
-    game_state->window_state->resizing = 0;
-    game_state->window_state->width = DEFAULT_WIDTH;
-    game_state->window_state->height = DEFAULT_HEIGHT;
-    game_state->window_state->aspect =
-            (float) DEFAULT_WIDTH / (float) DEFAULT_HEIGHT;
-    game_state->window_state->aspect = 1.0f;
-    game_state->window_state->zoom = 2.0f;
 
     glfwSetErrorCallback(error_callback);
     glfwSetKeyCallback(window, key_callback);
@@ -162,10 +170,10 @@ int main() {
     // https://www.khronos.org/opengl/wiki/Tutorial2:_VAOs,_VBOs,_Vertex_and_Fragment_Shaders_(C_/_SDL)
     float vertex_buffer[] = {
             // position  uv
-            1.0f, -1.0f, 1.0f, 1.0f, // lr 0
-            -1.0f, 1.0f, 0.0f, 0.0f, // ul 1
-            1.0f, 1.0f, 1.0f, 0.0f,  // ur 2
-            -1.0f, -1.0f, 0.0f, 1.0f // ll 3
+            500.0f, -500.0f, 1.0f, 1.0f, // lr 0
+            -500.0f, 500.0f, 0.0f, 0.0f, // ul 1
+            500.0f, 500.0f, 1.0f, 0.0f,  // ur 2
+            -500.0f, -500.0f, 0.0f, 1.0f // ll 3
     };
     int elements[] = {
             2, 1, 0,
@@ -194,15 +202,19 @@ int main() {
             GL_STATIC_DRAW);
 
     // pbo ---------------------------------------------------------------------
-    float pixels[] = { [0 ... (4 * (100 * 1)) - 1] = 0.0f };
+    //float pixels[] = { [0 ... (4 * (TW * 1)) - 1] = 0.0f };
+    //pixels[0] = 1.0f;
+    float *pixels = calloc(TW * 4, sizeof(float));
     pixels[0] = 1.0f;
+
     glGenBuffers(1, &pbo);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
 
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, sizeof(pixels), 0, GL_STREAM_DRAW);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 100, 1, 0,
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, TW * 4 * sizeof(float), 0,
+            GL_STREAM_DRAW);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TW, 1, 0,
             GL_RGBA, GL_FLOAT, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -212,7 +224,7 @@ int main() {
         fprintf(stderr, "Could not create mapped buffer\n");
         exit(-1);
     }
-    memcpy(mapped_buffer, pixels, sizeof(pixels));
+    memcpy(mapped_buffer, pixels, TW * 4 * sizeof(float));
     glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     // -------------------------------------------------------------------------
@@ -253,40 +265,49 @@ int main() {
         if (game_state->window_state->update_aspect) {
             glUniformMatrix4fv(mvp_uniform, 1, GL_FALSE,
                     (const GLfloat *) game_state->window_state->mvp);
-            game_state->window_state->update_aspect = 0;
             set_aspect(game_state->window_state->width,
                     game_state->window_state->height);
+            device_set_frequency(game_state->sdr_state->frequency);
+            fprintf(stderr, "Frequency: %ld\n",
+                    game_state->sdr_state->frequency);
+            game_state->window_state->update_aspect = 0;
         }
         glBindVertexArray(vao);
         glBindTexture(GL_TEXTURE_2D, tex);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
         // update
         for (int i = 0; i < timer.fps; i++) {
             float *line = queue_pop(&mag_line_queue);
-            if (line) {
+            if (line != NULL) {
+                //printf("here %d\n", timer.frame_count);
                 unsigned int points_per_pixel =
-                        FFT_SIZE / game_state->window_state->width;
-                for (unsigned int j = 0; j < game_state->window_state->width;
-                        j++) {
+                        FFT_SIZE / TW;
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+                memset(pixels, 0, TW * 4 * sizeof(float));
+                int cnt = 0;
+                for (unsigned int j = 0; j < TW; j++) {
                     float sum = 0;
                     for (unsigned int k = 0; k < points_per_pixel; k++) {
                         sum += line[j * points_per_pixel + k];
                     }
 
                     sum /= (float) points_per_pixel;
-                    uint8_t gray = interpolate(sum, 0.0, -128, 1.0, 128) * 255;
+                    uint8_t gray = interpolate(sum, 0.0, -128, 1.0, 0) * 255;
                     uint8_t intensity = color_intensity(gray);
-                    //fprintf(stdout, "%hhu\n", intensity);
+                    if (cnt <= TW * 4) {
+                        pixels[cnt] = (float) intensity / 255.0f;
+                        pixels[cnt + 1] = (float) intensity / 255.0f;
+                        pixels[cnt + 2] = (float) intensity / 255.0f;
+                        pixels[cnt + 3] = 1.0f;
+                    }
+                    cnt += 4;
                 }
+                memcpy(mapped_buffer, pixels, TW * 4 * sizeof(float));
+                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                 //waterfall_newline(&waterfall, line, FFT_SIZE);
                 free(line);
             }
         }
-        float pixels2[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-        memcpy(mapped_buffer, pixels2, sizeof(pixels2));
-        glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
 
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
@@ -310,6 +331,9 @@ int main() {
         }
     }
 
+    device_destroy();
+    queue_destroy(&mag_line_queue);
+
     glfwDestroyCursor(game_state->cursor);
     glfwDestroyWindow(window);
     glfwTerminate();
@@ -318,11 +342,11 @@ int main() {
     game_state->mouse_state = NULL;
     free(game_state->window_state);
     game_state->window_state = NULL;
+    free(game_state->sdr_state);
+    game_state->sdr_state = NULL;
     free(game_state);
     game_state = NULL;
 
-    device_destroy();
-    queue_destroy(&mag_line_queue);
 
     return 0;
 }
