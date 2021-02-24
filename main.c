@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 
 #include "global.h"
+#include "game_state.h"
 #include "linmath.h"
 #include "device.h"
 #include "queue.h"
@@ -15,14 +16,6 @@
 #include <libhackrf/hackrf.h>
 #include <stb/stb_image.h>
 #include <time.h>
-
-#define DEFAULT_WIDTH 1280
-#define DEFAULT_HEIGHT 640
-#define DEFAULT_SAMPLE_RATE 20000000
-#define DEFAULT_FREQUENCY 860721500
-#define DEFAULT_LNA_GAIN 24
-#define DEFAULT_VGA_GAIN 24
-#define FFT_SIZE 8192 // max BYTES_PER_TRANSFER
 
 game_state_t *game_state;
 queue_t mag_line_queue;
@@ -102,39 +95,8 @@ int main() {
     }
 
     queue_init(&mag_line_queue);
+    game_state = game_state_init();
     fft_init(FFT_SIZE);
-
-    game_state = malloc(sizeof(game_state_t));
-    if (game_state == NULL) {
-        fprintf(stderr, "Could not create game state\n");
-        exit(-1);
-    }
-    game_state->window_state = malloc(sizeof(window_state_t));
-    if (game_state->window_state == NULL) {
-        fprintf(stderr, "Could not create game state - window state\n");
-        exit(-1);
-    }
-    game_state->mouse_state = malloc(sizeof(mouse_state_t));
-    if (game_state->mouse_state == NULL) {
-        fprintf(stderr, "Could not create game state - mouse position\n");
-        exit(-1);
-    }
-    game_state->sdr_state = malloc(sizeof(sdr_state_t));
-    if (game_state->sdr_state == NULL) {
-        fprintf(stderr, "Could not create game state - sdr state\n");
-        exit(-1);
-    }
-
-    //game_state->cursor = custom_cursor(window);
-    game_state->should_close = 0;
-    game_state->window_state->resizing = 0;
-    game_state->window_state->width = DEFAULT_WIDTH;
-    game_state->window_state->height = DEFAULT_HEIGHT;
-    game_state->window_state->aspect =
-            (float) DEFAULT_WIDTH / (float) DEFAULT_HEIGHT;
-    game_state->window_state->aspect = 1.0f;
-    game_state->window_state->zoom = 500.0f;
-    game_state->sdr_state->frequency = DEFAULT_FREQUENCY;
 
     device_init();
     device_set_sample_rate(DEFAULT_SAMPLE_RATE);
@@ -151,10 +113,11 @@ int main() {
     //glfwWindowHint(GLFW_SAMPLES, 4); // anti-alias
 
     window = glfwCreateWindow(game_state->window_state->width,
-            game_state->window_state->height, "TradesKill", NULL,
-            NULL);
+                              game_state->window_state->height, "dbsdr", NULL,
+                              NULL);
     if (!window) {
         glfwTerminate();
+        fprintf(stderr, "Could not create window\n");
         return -1;
     }
 
@@ -204,13 +167,13 @@ int main() {
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_buffer), vertex_buffer,
-            GL_STATIC_DRAW);
+                 GL_STATIC_DRAW);
 
     // ebo
     glGenBuffers(1, &ebo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements,
-            GL_STATIC_DRAW);
+                 GL_STATIC_DRAW);
 
     // pbo ---------------------------------------------------------------------
     glGenTextures(1, &tex);
@@ -218,14 +181,16 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, game_state->window_state->width,
-            game_state->window_state->height, 0, GL_RGBA, GL_FLOAT, 0);
+                 game_state->window_state->height, 0,
+                 GL_RGBA, GL_FLOAT, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     glGenBuffers(1, &pbo);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
     glBufferData(GL_PIXEL_UNPACK_BUFFER,
-            game_state->window_state->width * game_state->window_state->height *
-                    4 * sizeof(float), NULL, GL_STREAM_DRAW);
+                 game_state->window_state->width *
+                         game_state->window_state->height * 4 * sizeof(float),
+                 NULL, GL_STREAM_DRAW);
 
     void *mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE);
     if (mapped_buffer == NULL) {
@@ -238,29 +203,29 @@ int main() {
 
     // position
     glVertexAttribPointer(0, position_size, GL_FLOAT, GL_FALSE,
-            4 * sizeof(float), (void *) 0);
+                          4 * sizeof(float), (void *) 0);
     glEnableVertexAttribArray(0);
 
     // uv
     glVertexAttribPointer(1, uv_size, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
-            (void *) (2 * sizeof(float)));
+                          (void *) (2 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
     GLuint default_program;
     default_program = shader_program_create("assets/shaders/default.v.shader",
-            "assets/shaders/default.f.shader");
+                                            "assets/shaders/default.f.shader");
     shader_program_bind_attribute_location(default_program, 0, "in_Position");
     shader_program_bind_attribute_location(default_program, 1, "in_Color");
     shader_program_link(default_program);
     GLint mvp_uniform = shader_program_get_uniform_location(default_program,
-            "mvp");
+                                                            "mvp");
 
     set_aspect(game_state->window_state->width,
-            game_state->window_state->height);
+               game_state->window_state->height);
     timer.previous_time = glfwGetTime();
     int shift = 0;
-    float *pixels;
     int one_line = (int) (game_state->window_state->width * 4 * sizeof(float));
+    float *pixels = calloc(game_state->window_state->width * 4, sizeof(float));
     while (!game_state->should_close && !glfwWindowShouldClose(window)
             && device_is_alive()) {
         timer.time = glfwGetTime();
@@ -273,9 +238,9 @@ int main() {
         glUseProgram(default_program);
         if (game_state->window_state->update_aspect) {
             glUniformMatrix4fv(mvp_uniform, 1, GL_FALSE,
-                    (const GLfloat *) game_state->window_state->mvp);
+                               (const GLfloat *) game_state->window_state->mvp);
             set_aspect(game_state->window_state->width,
-                    game_state->window_state->height);
+                       game_state->window_state->height);
             device_set_frequency(game_state->sdr_state->frequency);
             fprintf(stderr, "Frequency: %ld\n",
                     game_state->sdr_state->frequency);
@@ -287,10 +252,13 @@ int main() {
         glBindTexture(GL_TEXTURE_2D, tex);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, game_state->window_state->width,
-                game_state->window_state->height, GL_RGBA, GL_FLOAT, NULL);
-        glBufferData(GL_PIXEL_UNPACK_BUFFER, game_state->window_state->width *
-                        game_state->window_state->height * 4 * sizeof(float), NULL,
-                GL_STREAM_DRAW);
+                        game_state->window_state->height, GL_RGBA, GL_FLOAT,
+                        NULL);
+        glBufferData(GL_PIXEL_UNPACK_BUFFER,
+                     game_state->window_state->width *
+                             game_state->window_state->height * 4 *
+                             sizeof(float), NULL,
+                     GL_STREAM_DRAW);
         mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE);
         if (mapped_buffer != NULL) {
             // update
@@ -310,9 +278,10 @@ int main() {
                         uint8_t gray =
                                 interpolate(sum, 0.0, -128, 1.0, 0) * 255;
                         uint8_t intensity = color_intensity(gray);
-                        set_pixel(mapped_buffer, j * 4,
-                                (float) gray / 255.0f);
+                        set_pixel(pixels, j * 4,
+                                  (float) intensity / 255.0f);
                     }
+                    memcpy(mapped_buffer, pixels, one_line);
                     free(line);
                 }
             }
@@ -344,21 +313,14 @@ int main() {
         }
     }
 
+    free(pixels);
     device_destroy();
     queue_destroy(&mag_line_queue);
 
-    glfwDestroyCursor(game_state->cursor);
     glfwDestroyWindow(window);
     glfwTerminate();
 
-    free(game_state->mouse_state);
-    game_state->mouse_state = NULL;
-    free(game_state->window_state);
-    game_state->window_state = NULL;
-    free(game_state->sdr_state);
-    game_state->sdr_state = NULL;
-    free(game_state);
-    game_state = NULL;
+    game_state_destroy(game_state);
 
     return 0;
 }

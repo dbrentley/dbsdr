@@ -3,6 +3,15 @@
 
 #include "mouse.h"
 #include "linmath.h"
+#include "queue.h"
+
+#define DEFAULT_WIDTH 1280
+#define DEFAULT_HEIGHT 640
+#define DEFAULT_SAMPLE_RATE 20000000
+#define DEFAULT_FREQUENCY 106120000 //860721500
+#define DEFAULT_LNA_GAIN 24
+#define DEFAULT_VGA_GAIN 24
+#define FFT_SIZE 8192 // max BYTES_PER_TRANSFER
 
 typedef struct sdr_state {
     int64_t frequency;
@@ -46,5 +55,6 @@ typedef struct game_state {
 
 
 extern game_state_t *game_state;
+extern queue_t mag_line_queue;
 
 #endif // DBSDR_GLOBAL_H
