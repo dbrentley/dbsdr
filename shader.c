@@ -59,7 +59,7 @@ GLuint shader_create(GLenum type, char *file) {
 }
 
 GLuint shader_program_create(char *vertex_shader_file,
-        char *fragment_shader_file) {
+                             char *fragment_shader_file) {
     GLuint program, vertex_shader, fragment_shader;
 
     vertex_shader = shader_create(GL_VERTEX_SHADER, vertex_shader_file);
@@ -74,7 +74,7 @@ GLuint shader_program_create(char *vertex_shader_file,
 }
 
 void shader_program_bind_attribute_location(GLuint program, GLuint index,
-        const GLchar *name) {
+                                            const GLchar *name) {
     glBindAttribLocation(program, index, name);
 }
 

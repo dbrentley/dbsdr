@@ -24,8 +24,6 @@
 #define DEFAULT_VGA_GAIN 24
 #define FFT_SIZE 8192 // max BYTES_PER_TRANSFER
 
-#define TW (8192)
-
 game_state_t *game_state;
 queue_t mag_line_queue;
 
@@ -80,6 +78,18 @@ double interpolate(double val, double y0, double x0, double y1, double x1) {
 
 uint32_t color_intensity(uint8_t intensity) {
     return 255 << 24 | intensity << 16 | intensity << 8 | intensity;
+}
+
+float float_rand(float min, float max) {
+    float scale = rand() / (float) RAND_MAX; /* [0, 1.0] */
+    return min + scale * (max - min);      /* [min, max] */
+}
+
+void set_pixel(float *location, unsigned int offset, float value) {
+    location[offset] = value;
+    location[offset + 1] = value;
+    location[offset + 2] = value;
+    location[offset + 3] = 1.0f;
 }
 
 int main() {
@@ -137,10 +147,11 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    //glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
     //glfwWindowHint(GLFW_SAMPLES, 4); // anti-alias
 
-    window = glfwCreateWindow(DEFAULT_WIDTH, DEFAULT_HEIGHT, "TradesKill", NULL,
+    window = glfwCreateWindow(game_state->window_state->width,
+            game_state->window_state->height, "TradesKill", NULL,
             NULL);
     if (!window) {
         glfwTerminate();
@@ -170,10 +181,10 @@ int main() {
     // https://www.khronos.org/opengl/wiki/Tutorial2:_VAOs,_VBOs,_Vertex_and_Fragment_Shaders_(C_/_SDL)
     float vertex_buffer[] = {
             // position  uv
-            500.0f, -500.0f, 1.0f, 1.0f, // lr 0
-            -500.0f, 500.0f, 0.0f, 0.0f, // ul 1
-            500.0f, 500.0f, 1.0f, 0.0f,  // ur 2
-            -500.0f, -500.0f, 0.0f, 1.0f // ll 3
+            1.0f, -1.0f, 1.0f, 1.0f, // lr 0
+            -1.0f, 1.0f, 0.0f, 0.0f, // ul 1
+            1.0f, 1.0f, 1.0f, 0.0f,  // ur 2
+            -1.0f, -1.0f, 0.0f, 1.0f // ll 3
     };
     int elements[] = {
             2, 1, 0,
@@ -202,29 +213,25 @@ int main() {
             GL_STATIC_DRAW);
 
     // pbo ---------------------------------------------------------------------
-    //float pixels[] = { [0 ... (4 * (TW * 1)) - 1] = 0.0f };
-    //pixels[0] = 1.0f;
-    float *pixels = calloc(TW * 4, sizeof(float));
-    pixels[0] = 1.0f;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, game_state->window_state->width,
+            game_state->window_state->height, 0, GL_RGBA, GL_FLOAT, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     glGenBuffers(1, &pbo);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, TW * 4 * sizeof(float), 0,
-            GL_STREAM_DRAW);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TW, 1, 0,
-            GL_RGBA, GL_FLOAT, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER,
+            game_state->window_state->width * game_state->window_state->height *
+                    4 * sizeof(float), NULL, GL_STREAM_DRAW);
 
     void *mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE);
     if (mapped_buffer == NULL) {
         fprintf(stderr, "Could not create mapped buffer\n");
         exit(-1);
     }
-    memcpy(mapped_buffer, pixels, TW * 4 * sizeof(float));
     glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     // -------------------------------------------------------------------------
@@ -248,12 +255,14 @@ int main() {
     GLint mvp_uniform = shader_program_get_uniform_location(default_program,
             "mvp");
 
-
     set_aspect(game_state->window_state->width,
             game_state->window_state->height);
     timer.previous_time = glfwGetTime();
-    while (!game_state->should_close && !glfwWindowShouldClose(window) &&
-            device_is_alive()) {
+    int shift = 0;
+    float *pixels;
+    int one_line = (int) (game_state->window_state->width * 4 * sizeof(float));
+    while (!game_state->should_close && !glfwWindowShouldClose(window)
+            && device_is_alive()) {
         timer.time = glfwGetTime();
         timer.start_time = timer.time;
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -271,43 +280,47 @@ int main() {
             fprintf(stderr, "Frequency: %ld\n",
                     game_state->sdr_state->frequency);
             game_state->window_state->update_aspect = 0;
+            one_line = (int) (game_state->window_state->width * 4 *
+                    sizeof(float));
         }
         glBindVertexArray(vao);
         glBindTexture(GL_TEXTURE_2D, tex);
-        // update
-        for (int i = 0; i < timer.fps; i++) {
-            float *line = queue_pop(&mag_line_queue);
-            if (line != NULL) {
-                //printf("here %d\n", timer.frame_count);
-                unsigned int points_per_pixel =
-                        FFT_SIZE / TW;
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-                memset(pixels, 0, TW * 4 * sizeof(float));
-                int cnt = 0;
-                for (unsigned int j = 0; j < TW; j++) {
-                    float sum = 0;
-                    for (unsigned int k = 0; k < points_per_pixel; k++) {
-                        sum += line[j * points_per_pixel + k];
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, game_state->window_state->width,
+                game_state->window_state->height, GL_RGBA, GL_FLOAT, NULL);
+        glBufferData(GL_PIXEL_UNPACK_BUFFER, game_state->window_state->width *
+                        game_state->window_state->height * 4 * sizeof(float), NULL,
+                GL_STREAM_DRAW);
+        mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE);
+        if (mapped_buffer != NULL) {
+            // update
+            for (int i = 0; i < timer.fps; i++) {
+                float *line = queue_pop(&mag_line_queue);
+                if (line != NULL) {
+                    unsigned int points_per_pixel =
+                            FFT_SIZE / game_state->window_state->width;
+                    // one line/row of pixels
+                    for (unsigned int j = 0;
+                            j < game_state->window_state->width; j++) {
+                        float sum = 0;
+                        for (unsigned int k = 0; k < points_per_pixel; k++) {
+                            sum += line[j * points_per_pixel + k];
+                        }
+                        sum /= (float) points_per_pixel;
+                        uint8_t gray =
+                                interpolate(sum, 0.0, -128, 1.0, 0) * 255;
+                        uint8_t intensity = color_intensity(gray);
+                        set_pixel(mapped_buffer, j * 4,
+                                (float) gray / 255.0f);
                     }
-
-                    sum /= (float) points_per_pixel;
-                    uint8_t gray = interpolate(sum, 0.0, -128, 1.0, 0) * 255;
-                    uint8_t intensity = color_intensity(gray);
-                    if (cnt <= TW * 4) {
-                        pixels[cnt] = (float) intensity / 255.0f;
-                        pixels[cnt + 1] = (float) intensity / 255.0f;
-                        pixels[cnt + 2] = (float) intensity / 255.0f;
-                        pixels[cnt + 3] = 1.0f;
-                    }
-                    cnt += 4;
+                    free(line);
                 }
-                memcpy(mapped_buffer, pixels, TW * 4 * sizeof(float));
-                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                //waterfall_newline(&waterfall, line, FFT_SIZE);
-                free(line);
             }
+            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
         }
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        memmove(mapped_buffer + one_line, mapped_buffer,
+                (game_state->window_state->height - 1) * one_line);
 
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
@@ -346,7 +359,6 @@ int main() {
     game_state->sdr_state = NULL;
     free(game_state);
     game_state = NULL;
-
 
     return 0;
 }
