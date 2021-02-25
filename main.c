@@ -71,10 +71,7 @@ float float_rand(float min, float max) {
 }
 
 void set_pixel(float *location, unsigned int offset, float sum) {
-    float value = 35 / fabsf(sum);
-    // printf("%f\n", value);
-    // float value = 1 / abs(sum);
-    // uint8_t v = normalize(sum, -128, 0);
+    float value = DEFAULT_LNA_GAIN / fabsf(sum);
 
     location[offset] = value;
     location[offset + 1] = value;
@@ -89,6 +86,7 @@ void *queue_processor() {
             game_state->sdr_state->last_line = line;
         }
         free(line);
+        // this shouldn't happen but just in case
         if (queue_size(&mag_line_queue) > 25000) {
             queue_pop(&mag_line_queue);
         }
@@ -168,7 +166,7 @@ int main() {
     unsigned int position_size = 2;
     unsigned int uv_size = 2;
 
-    GLuint vbo, vao, tex, ebo, pbo;
+    GLuint vbo, vao, tex, ebo;
 
     // voa
     glGenVertexArrays(1, &vao);
@@ -186,28 +184,16 @@ int main() {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements,
                  GL_STATIC_DRAW);
 
-    // pbo
+    // texture
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    float *pixels =
+            malloc(WATERFALL_WIDTH * WATERFALL_HEIGHT * 4 * sizeof(float));
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, WATERFALL_WIDTH, WATERFALL_HEIGHT,
-                 0, GL_RGBA, GL_FLOAT, 0);
+                 0, GL_RGBA, GL_FLOAT, pixels);
     glBindTexture(GL_TEXTURE_2D, 0);
-
-    glGenBuffers(1, &pbo);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-    glBufferData(GL_PIXEL_UNPACK_BUFFER,
-                 WATERFALL_WIDTH * WATERFALL_HEIGHT * 4 * sizeof(float), NULL,
-                 GL_STREAM_DRAW);
-
-    void *mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE);
-    if (mapped_buffer == NULL) {
-        fprintf(stderr, "Could not create mapped buffer\n");
-        exit(-1);
-    }
-    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
     // position attribute pointer
     glVertexAttribPointer(0, position_size, GL_FLOAT, GL_FALSE,
@@ -255,34 +241,23 @@ int main() {
             one_line = (int)(WATERFALL_WIDTH * 4 * sizeof(float));
         }
 
-        glBindVertexArray(vao);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WATERFALL_WIDTH,
-                        WATERFALL_HEIGHT, GL_RGBA, GL_FLOAT, NULL);
-        glBufferData(GL_PIXEL_UNPACK_BUFFER,
-                     WATERFALL_WIDTH * WATERFALL_HEIGHT * 4 * sizeof(float),
-                     NULL, GL_STREAM_DRAW);
-        mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE);
-
-        if (mapped_buffer != NULL) {
-            float *line = game_state->sdr_state->last_line;
-            unsigned int points_per_pixel = FFT_SIZE / WATERFALL_WIDTH;
-            // one line/row of pixels
-            for (unsigned int j = 0; j < WATERFALL_WIDTH; j++) {
-                float sum = 0;
-                for (unsigned int k = 0; k < points_per_pixel; k++) {
-                    sum += line[j * points_per_pixel + k];
-                }
-                sum /= (float)points_per_pixel;
-                set_pixel(mapped_buffer, j * 4, sum);
+        // update pixels
+        memmove(pixels + (one_line), pixels, (WATERFALL_HEIGHT - 1) * one_line);
+        float *line = game_state->sdr_state->last_line;
+        unsigned int points_per_pixel = FFT_SIZE / WATERFALL_WIDTH;
+        // one line/row of pixels
+        for (unsigned int j = 0; j < WATERFALL_WIDTH; j++) {
+            float sum = 0;
+            for (unsigned int k = 0; k < points_per_pixel; k++) {
+                sum += line[j * points_per_pixel + k];
             }
-            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-            memmove(mapped_buffer + (one_line), mapped_buffer,
-                    (WATERFALL_HEIGHT - 1) * one_line);
+            sum /= (float)points_per_pixel;
+            set_pixel(pixels, j * 4, sum);
         }
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
+        glBindVertexArray(vao);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WATERFALL_WIDTH,
+                        WATERFALL_HEIGHT, GL_RGBA, GL_FLOAT, pixels);
+        glBindTexture(GL_TEXTURE_2D, tex);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
         glUseProgram(0);
@@ -312,6 +287,7 @@ int main() {
     queue_destroy(&mag_line_queue);
     glfwDestroyWindow(window);
     game_state_destroy(game_state);
+    free(pixels);
 
     return 0;
 }
