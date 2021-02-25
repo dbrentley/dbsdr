@@ -4,9 +4,9 @@
 
 #include "mouse.h"
 #include "global.h"
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 void hide_cursor(GLFWwindow *window) {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
@@ -54,15 +54,15 @@ void scroll_callback(GLFWwindow *window, double x_offset, double y_offset) {
     game_state->mouse_state->scroll_x_offset = x_offset;
     game_state->mouse_state->scroll_y_offset = y_offset;
     if (y_offset == -1.0f) {
-        game_state->sdr_state->frequency += 1000000;
-//        if (game_state->window_state->zoom < 30.0f) {
-//        game_state->window_state->zoom += 1.0f;
-//        }
-    } else {
         game_state->sdr_state->frequency -= 1000000;
-//        if (game_state->window_state->zoom > 1.0f) {
-//        game_state->window_state->zoom -= 1.0f;
-//        }
+        //        if (game_state->window_state->zoom < 30.0f) {
+        //        game_state->window_state->zoom += 1.0f;
+        //        }
+    } else {
+        game_state->sdr_state->frequency += 1000000;
+        //        if (game_state->window_state->zoom > 1.0f) {
+        //        game_state->window_state->zoom -= 1.0f;
+        //        }
     }
     game_state->window_state->update_aspect = 1;
 }
