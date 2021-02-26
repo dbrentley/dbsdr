@@ -106,7 +106,10 @@ int main() {
     game_state = game_state_init();
     fft_init(FFT_SIZE);
 
-    device_init();
+    if (!device_init()) {
+        fprintf(stderr, "Could not open HackRF device\n");
+        exit(-1);
+    }
     device_set_sample_rate(DEFAULT_SAMPLE_RATE);
     device_set_frequency(game_state->sdr_state->frequency);
     device_set_lna_gain(DEFAULT_LNA_GAIN);
