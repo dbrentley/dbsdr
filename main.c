@@ -24,6 +24,11 @@ void error_callback(int error, const char *description) {
     fprintf(stderr, "Error: %s\n", description);
 }
 
+void window_close_callback(GLFWwindow *window) {
+    // TODO: move all this mess to window object
+    game_state->should_close = 1;
+}
+
 void receive_callback(void *samples, size_t n_samples,
                       size_t bytes_per_sample) {
     int8_t *buff = (int8_t *)samples;
@@ -137,6 +142,7 @@ int main() {
     }
 
     glfwSetErrorCallback(error_callback);
+    glfwSetWindowCloseCallback(window, window_close_callback);
     glfwSetKeyCallback(window, key_callback);
     glfwSetCursorPosCallback(window, cursor_position_callback);
     glfwSetScrollCallback(window, scroll_callback);
@@ -290,7 +296,10 @@ int main() {
     queue_destroy(&mag_line_queue);
     glfwDestroyWindow(window);
     game_state_destroy(game_state);
-    free(pixels);
+    if (pixels != NULL) {
+        free(pixels);
+        pixels = NULL;
+    }
 
     return 0;
 }
